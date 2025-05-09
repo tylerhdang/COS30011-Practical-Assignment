@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EnviroGuardian Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+        }
+        .status-value {
+            font-weight: bold;
+        }
+        .led-status {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .led-on {
+            background-color: #00ff00;
+        }
+        .led-off {
+            background-color: #cccccc;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .threshold-control {
+            margin-bottom: 10px;
+        }
+        .threshold-control label {
+            display: inline-block;
+            width: 150px;
+            margin-right: 10px;
+        }
+        .threshold-control input {
+            width: 80px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>EnviroGuardian Control Panel</h1>
+    
+    <div id="connection-status">
+        {% if connected %}
+        <p>Status: <span style="color: green">Connected to Arduino</span></p>
+        {% else %}
+        <p>Status: <span style="color: red">Not connected to Arduino</span></p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>System Status</h2>
+        <p>Mode: <span id="mode-status" class="status-value">{{ status.mode }}</span></p>
+        <p>Control: <span id="control-status" class="status-value">{{ status.control }}</span></p>
+        <p>Temperature: <span id="temperature" class="status-value">{{ status.temperature }}°C</span></p>
+        <p>Humidity: <span id="humidity" class="status-value">{{ status.humidity }}%</span></p>
+        <p>Servo Position: <span id="servo-position" class="status-value">{{ status.servo_position }}°</span></p>
+    </div>
+
+    <div class="section">
+        <h2>Mode Control</h2>
+        <button onclick="setMode('normal')">Normal Mode</button>
+        <button onclick="setMode('offset')">Offset Mode</button>
+        <button onclick="setMode('override')">Override Mode</button>
+    </div>
+
+    <div class="section">
+        <h2>Control Mode</h2>
+        <button onclick="setAuto('on')">Auto Mode</button>
+        <button onclick="setAuto('off')">Remote Control</button>
+    </div>
+
+    <div class="section">
+        <h2>LED Control</h2>
+        <div>
+            <span>Red LED:</span>
+            <span id="red-led-status" class="led-status {% if status.red_led %}led-on{% else %}led-off{% endif %}"></span>
+            <button onclick="setLed('red', 'on')">ON</button>
+            <button onclick="setLed('red', 'off')">OFF</button>
+        </div>
+        <div>
+            <span>Yellow LED:</span>
+            <span id="yellow-led-status" class="led-status {% if status.yellow_led %}led-on{% else %}led-off{% endif %}"></span>
+            <button onclick="setLed('yellow', 'on')">ON</button>
+            <button onclick="setLed('yellow', 'off')">OFF</button>
+        </div>
+        <div>  
+            <span>Green LED:</span>
+            <span id="green-led-status" class="led-status {% if status.green_led %}led-on{% else %}led-off{% endif %}"></span>
+            <button onclick="setLed('green', 'on')">ON</button>
+            <button onclick="setLed('green', 'off')">OFF</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Buzzer Control</h2>
+        <button onclick="triggerBuzzer()">Trigger Buzzer</button>
+    </div>
+
+    <div class="section">
+        <h2>Servo Control</h2>
+        <p>Position: <span id="servo-position-display">{{ status.servo_position }}</span>°</p>
+        <input type="range" id="servo-slider" min="0" max="180" value="{{ status.servo_position }}" oninput="updateServoSlider()">
+        <button onclick="setServo()">Set Servo Position</button>
+    </div>
+
+    <div class="section">
+        <h2>Quick Preset Positions</h2>
+        <button onclick="setServoPreset(0)">0° (YES)</button>
+        <button onclick="setServoPreset(90)">90° (NEUTRAL)</button>
+        <button onclick="setServoPreset(180)">180° (NO)</button>
+    </div>
+
+    <!-- New Data Visualization Section -->
+    <div class="section">
+        <h2>Historical Data</h2>
+        <canvas id="dataChart" height="200"></canvas>
+    </div>
+
+    <div class="section">
+        <h2>Recent Readings</h2>
+        <table id="recentData">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Mode</th>
+                    <th>Temperature (°C)</th>
+                    <th>Humidity (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Will be populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- New Threshold Control Section -->
+    <div class="section" id="thresholdControls">
+        <h2>Condition Thresholds</h2>
+        <div class="threshold-group">
+            <h3>Good Conditions</h3>
+            <div class="threshold-control">
+                <label>Temp Min: <input type="number" id="goodTempMin" step="0.1" disabled></label>
+                <label>Temp Max: <input type="number" id="goodTempMax" step="0.1" disabled></label>
+            </div>
+            <div class="threshold-control">
+                <label>Humidity Min: <input type="number" id="goodHumMin" step="0.1" disabled></label>
+                <label>Humidity Max: <input type="number" id="goodHumMax" step="0.1" disabled></label>
+            </div>
+        </div>
+        <div class="threshold-group">
+            <h3>Acceptable Conditions</h3>
+            <div class="threshold-control">
+                <label>Temp Min: <input type="number" id="acceptableTempMin" step="0.1" disabled></label>
+                <label>Temp Max: <input type="number" id="acceptableTempMax" step="0.1" disabled></label>
+            </div>
+            <div class="threshold-control">
+                <label>Humidity Min: <input type="number" id="acceptableHumMin" step="0.1" disabled></label>
+                <label>Humidity Max: <input type="number" id="acceptableHumMax" step="0.1" disabled></label>
+            </div>
+        </div>
+        <button id="updateThresholds" disabled>Apply Changes</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Initialize chart
+        let dataChart;
+        function initChart() {
+            const ctx = document.getElementById('dataChart').getContext('2d');
+            dataChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Temperature (°C)',
+                            data: [],
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            tension: 0.1,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Humidity (%)',
+                            data: [],
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            tension: 0.1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Temperature (°C)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Humidity (%)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load historical data for chart
+        function loadChartData() {
+            fetch('/api/data/history')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error(data.error);
+                        return;
+                    }
+                    
+                    // Update chart
+                    dataChart.data.labels = data.timestamps;
+                    dataChart.data.datasets[0].data = data.temperatures;
+                    dataChart.data.datasets[1].data = data.humidities;
+                    dataChart.update();
+                });
+        }
+
+        // Load recent data for table
+        function loadRecentData() {
+            fetch('/api/data/recent')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error(data.error);
+                        return;
+                    }
+                    
+                    const tbody = document.querySelector('#recentData tbody');
+                    tbody.innerHTML = '';
+                    
+                    data.data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${row.timestamp}</td>
+                            <td>${row.mode}</td>
+                            <td>${row.temperature.toFixed(1)}</td>
+                            <td>${row.humidity.toFixed(1)}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+
+        // Update threshold controls based on current status
+        function updateThresholdControls(thresholds) {
+            document.getElementById('goodTempMin').value = thresholds.goodTempMin;
+            document.getElementById('goodTempMax').value = thresholds.goodTempMax;
+            document.getElementById('goodHumMin').value = thresholds.goodHumMin;
+            document.getElementById('goodHumMax').value = thresholds.goodHumMax;
+            document.getElementById('acceptableTempMin').value = thresholds.acceptableTempMin;
+            document.getElementById('acceptableTempMax').value = thresholds.acceptableTempMax;
+            document.getElementById('acceptableHumMin').value = thresholds.acceptableHumMin;
+            document.getElementById('acceptableHumMax').value = thresholds.acceptableHumMax;
+        }
+
+        // Toggle threshold controls based on control mode
+        function toggleThresholdControls(isRemote) {
+            const inputs = document.querySelectorAll('#thresholdControls input');
+            const button = document.getElementById('updateThresholds');
+            
+            inputs.forEach(input => {
+                input.disabled = !isRemote;
+            });
+            button.disabled = !isRemote;
+        }
+
+        // Update thresholds on Arduino
+        function updateThresholds() {
+            const thresholds = {
+                goodTempMin: parseFloat(document.getElementById('goodTempMin').value),
+                goodTempMax: parseFloat(document.getElementById('goodTempMax').value),
+                goodHumMin: parseFloat(document.getElementById('goodHumMin').value),
+                goodHumMax: parseFloat(document.getElementById('goodHumMax').value),
+                acceptableTempMin: parseFloat(document.getElementById('acceptableTempMin').value),
+                acceptableTempMax: parseFloat(document.getElementById('acceptableTempMax').value),
+                acceptableHumMin: parseFloat(document.getElementById('acceptableHumMin').value),
+                acceptableHumMax: parseFloat(document.getElementById('acceptableHumMax').value)
+            };
+
+            fetch('/api/thresholds/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(thresholds)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Thresholds updated successfully!');
+                    setAuto('on'); // Switch back to auto mode
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            });
+        }
+
+        // Update status every 3 seconds
+        setInterval(updateStatus, 3000);
+
+        function updateStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('mode-status').textContent = data.mode;
+                    document.getElementById('control-status').textContent = data.control;
+                    document.getElementById('temperature').textContent = data.temperature + '°C';
+                    document.getElementById('humidity').textContent = data.humidity + '%';
+                    document.getElementById('servo-position').textContent = data.servo_position + '°';
+                    
+                    // Update LED status indicators
+                    updateLedStatus('red', data.red_led);
+                    updateLedStatus('yellow', data.yellow_led);
+                    updateLedStatus('green', data.green_led);
+
+                    // Update threshold controls
+                    if (data.thresholds) {
+                        updateThresholdControls(data.thresholds);
+                    }
+
+                    // Toggle threshold controls based on control mode
+                    toggleThresholdControls(data.control === 'REMOTE');
+                });
+        }
+
+        function updateLedStatus(led, isOn) {
+            const element = document.getElementById(led + '-led-status');
+            if (isOn) {
+                element.classList.remove('led-off');
+                element.classList.add('led-on');
+            } else {
+                element.classList.remove('led-on');
+                element.classList.add('led-off');
+            }
+        }
+
+        function setMode(mode) {
+            fetch('/api/control/mode/' + mode)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('mode-status').textContent = data.mode;
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+
+        function setAuto(state) {
+            fetch('/api/control/auto/' + state)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('control-status').textContent = data.control;
+                        toggleThresholdControls(data.control === 'REMOTE');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+
+        function setLed(led, state) {
+            fetch('/api/control/led/' + led + '/' + state)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateLedStatus(led, state === 'on');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+
+        function triggerBuzzer() {
+            fetch('/api/control/buzzer')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+
+        function updateServoSlider() {
+            const value = document.getElementById('servo-slider').value;
+            document.getElementById('servo-position-display').textContent = value;
+        }
+
+        function setServo() {
+            const position = document.getElementById('servo-slider').value;
+            fetch('/api/control/servo/' + position)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('servo-position').textContent = data.servo_position + '°';
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                });
+        }
+
+        function setServoPreset(position) {
+            document.getElementById('servo-slider').value = position;
+            document.getElementById('servo-position-display').textContent = position;
+            setServo();
+        }
+
+        // Initialize everything when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initChart();
+            loadChartData();
+            loadRecentData();
+            document.getElementById('updateThresholds').addEventListener('click', updateThresholds);
+            
+            // Load initial status
+            updateStatus();
+        });
+    </script>
+</body>
+</html>
